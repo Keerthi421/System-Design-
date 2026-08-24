@@ -1,399 +1,114 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  MarkerType,
-  MiniMap,
-  ReactFlow,
-  ReactFlowInstance,
-  addEdge,
-  useEdgesState,
-  useNodesState,
-  type Connection,
-  type Edge,
-  type Node,
+  Background, BackgroundVariant, Controls, Handle, MarkerType, MiniMap, Position,
+  ReactFlow, addEdge, useEdgesState, useNodesState,
+  type Connection, type Edge, type Node
 } from '@xyflow/react'
 import {
-  Box,
-  ChevronDown,
-  ChevronRight,
-  Cloud,
-  Code2,
-  Database,
-  Download,
-  FileCode2,
-  FilePlus2,
-  Folder,
-  Gauge,
-  Github,
-  GitBranch,
-  Globe2,
-  GripVertical,
-  HardDrive,
-  Layers3,
-  Link2,
-  Menu,
-  MessageSquareText,
-  MoreHorizontal,
-  Network,
-  Plus,
-  Save,
-  Search,
-  Server,
-  Settings2,
-  Share2,
-  Sparkles,
-  StickyNote,
-  Trash2,
-  Upload,
-  X,
-  Zap,
+  Box, ChevronDown, CircleDot, Cloud, Copy, Database, Download, FilePlus2,
+  Globe2, GripVertical, HardDrive, Layers3, Link2, MessageSquareText, MoreHorizontal,
+  MousePointer2, Network, Pencil, Plus, Redo2, Save, Search, Server, Square, StickyNote,
+  Trash2, Type, Undo2, Upload, Workflow, X, Zap
 } from 'lucide-react'
 import '@xyflow/react/dist/style.css'
 
-type DesignNodeData = {
-  label: string
-  type: string
-  description?: string
-  technology?: string
-  color?: string
-}
+type Kind = 'client'|'service'|'gateway'|'load-balancer'|'database'|'cache'|'queue'|'storage'|'cdn'|'worker'|'external'|'box'|'group'|'text'|'note'
+type DesignData = { label:string; kind:Kind; color:string; description?:string }
+type DesignNode = Node<DesignData>
+type ProjectFile = { id:string; name:string; updatedAt:number; nodes:DesignNode[]; edges:Edge[] }
 
-type DesignNode = Node<DesignNodeData>
-
-type ProjectFile = {
-  id: string
-  name: string
-  updatedAt: number
-  problem: string
-  notes: string
-  nodes: DesignNode[]
-  edges: Edge[]
-}
-
-const palette = [
-  { type: 'client', label: 'Client', icon: Globe2, color: '#61dafb' },
-  { type: 'service', label: 'Service', icon: Server, color: '#8b5cf6' },
-  { type: 'gateway', label: 'API Gateway', icon: Network, color: '#f59e0b' },
-  { type: 'load-balancer', label: 'Load Balancer', icon: GitBranch, color: '#22c55e' },
-  { type: 'database', label: 'Database', icon: Database, color: '#38bdf8' },
-  { type: 'cache', label: 'Cache', icon: Zap, color: '#f97316' },
-  { type: 'queue', label: 'Queue', icon: MessageSquareText, color: '#ec4899' },
-  { type: 'storage', label: 'Object Storage', icon: HardDrive, color: '#14b8a6' },
-  { type: 'cdn', label: 'CDN', icon: Cloud, color: '#60a5fa' },
-  { type: 'worker', label: 'Worker', icon: Gauge, color: '#a78bfa' },
-  { type: 'external', label: 'External API', icon: Link2, color: '#94a3b8' },
+const palette:{kind:Kind;label:string;icon:any;color:string}[] = [
+  {kind:'client',label:'Client',icon:Globe2,color:'#60a5fa'},
+  {kind:'service',label:'Service',icon:Server,color:'#8b5cf6'},
+  {kind:'gateway',label:'API Gateway',icon:Network,color:'#f59e0b'},
+  {kind:'load-balancer',label:'Load Balancer',icon:Workflow,color:'#22c55e'},
+  {kind:'database',label:'Database',icon:Database,color:'#38bdf8'},
+  {kind:'cache',label:'Cache',icon:Zap,color:'#fb923c'},
+  {kind:'queue',label:'Queue',icon:MessageSquareText,color:'#ec4899'},
+  {kind:'storage',label:'Object Storage',icon:HardDrive,color:'#14b8a6'},
+  {kind:'cdn',label:'CDN',icon:Cloud,color:'#818cf8'},
+  {kind:'worker',label:'Worker',icon:Workflow,color:'#a78bfa'},
+  {kind:'external',label:'External API',icon:Link2,color:'#94a3b8'},
+  {kind:'box',label:'Box',icon:Square,color:'#94a3b8'},
+  {kind:'group',label:'Group',icon:Box,color:'#64748b'},
+  {kind:'text',label:'Text',icon:Type,color:'#e2e8f0'},
+  {kind:'note',label:'Sticky Note',icon:StickyNote,color:'#facc15'},
 ]
 
-const starterTemplates: Record<string, { title: string; problem: string; nodes: DesignNode[]; edges: Edge[] }> = {
-  'url-shortener': {
-    title: 'URL Shortener',
-    problem: 'Design a URL shortener that supports high read traffic, durable links, analytics, and predictable redirects.',
-    nodes: [
-      node('client', 'Web / Mobile', 80, 220, '#61dafb'),
-      node('gateway', 'API Gateway', 330, 220, '#f59e0b'),
-      node('service', 'Shortener Service', 590, 130, '#8b5cf6'),
-      node('service', 'Redirect Service', 590, 310, '#8b5cf6'),
-      node('cache', 'Redis', 870, 90, '#f97316'),
-      node('database', 'URL Metadata DB', 870, 280, '#38bdf8'),
-      node('queue', 'Analytics Queue', 870, 470, '#ec4899'),
-    ],
-    edges: edgeSet([
-      ['n1', 'n2'], ['n2', 'n3'], ['n2', 'n4'], ['n4', 'n5'], ['n4', 'n6'], ['n4', 'n7'], ['n3', 'n5'], ['n3', 'n6'],
-    ]),
-  },
-  'news-feed': {
-    title: 'News Feed',
-    problem: 'Design a personalized feed with fan-out trade-offs, caching, ranking, and graceful handling of celebrity accounts.',
-    nodes: [
-      node('client', 'Clients', 70, 240, '#61dafb'),
-      node('gateway', 'API Gateway', 300, 240, '#f59e0b'),
-      node('service', 'Feed API', 540, 120, '#8b5cf6'),
-      node('service', 'Ranking Service', 540, 360, '#8b5cf6'),
-      node('cache', 'Feed Cache', 820, 80, '#f97316'),
-      node('database', 'Social Graph DB', 820, 250, '#38bdf8'),
-      node('queue', 'Fanout Queue', 820, 430, '#ec4899'),
-      node('worker', 'Fanout Workers', 1070, 430, '#a78bfa'),
-    ],
-    edges: edgeSet([['n1','n2'],['n2','n3'],['n2','n4'],['n3','n5'],['n3','n6'],['n4','n5'],['n6','n7'],['n7','n8']]),
-  },
-  'chat': {
-    title: 'Real-Time Chat',
-    problem: 'Design one-to-one and group messaging with online presence, delivery acknowledgements, ordering, and offline delivery.',
-    nodes: [
-      node('client', 'Clients', 70, 240, '#61dafb'),
-      node('gateway', 'Edge Gateway', 300, 240, '#f59e0b'),
-      node('service', 'Chat Service', 540, 130, '#8b5cf6'),
-      node('service', 'Presence Service', 540, 360, '#8b5cf6'),
-      node('queue', 'Message Bus', 800, 130, '#ec4899'),
-      node('database', 'Message Store', 800, 360, '#38bdf8'),
-      node('cache', 'Presence Cache', 1040, 250, '#f97316'),
-    ],
-    edges: edgeSet([['n1','n2'],['n2','n3'],['n2','n4'],['n3','n5'],['n3','n6'],['n4','n7'],['n5','n6'],['n4','n6']]),
-  },
-}
-
-function node(type: string, label: string, x: number, y: number, color: string): DesignNode {
+function makeNode(kind:Kind, position={x:220,y:180}):DesignNode {
+  const p = palette.find(x=>x.kind===kind)!
   return {
-    id: `n${Math.random().toString(36).slice(2, 8)}`,
-    type: 'default',
-    position: { x, y },
-    data: { label, type, color, description: defaultDescription(type), technology: defaultTechnology(type) },
+    id: crypto.randomUUID(), type:'design', position,
+    data:{label:p.label,kind,color:p.color,description:''},
+    style:{width: kind==='group'?280:kind==='text'?180:kind==='note'?190:170}
   }
 }
-
-function edgeSet(pairs: string[][]): Edge[] {
-  return pairs.map(([source, target], index) => ({
-    id: `e-${index}-${source}-${target}`,
-    source,
-    target,
-    type: 'smoothstep',
-    markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15 },
-    style: { stroke: '#64748b', strokeWidth: 1.8 },
-  }))
+function blankFile(name='Untitled Design'):ProjectFile {
+  return {id:crypto.randomUUID(),name,updatedAt:Date.now(),nodes:[],edges:[]}
 }
+const seed = blankFile('Untitled Design')
 
-function defaultDescription(type: string) {
-  const map: Record<string, string> = {
-    client: 'End-user surface that sends requests into the system.',
-    service: 'Stateless application service containing domain logic.',
-    gateway: 'Single edge entry point for routing, auth, rate limiting, and observability.',
-    'load-balancer': 'Distributes traffic across healthy instances.',
-    database: 'Durable source of truth for structured application state.',
-    cache: 'Low-latency store for hot or derived data.',
-    queue: 'Durable asynchronous boundary between producers and consumers.',
-    storage: 'Highly durable object/blob storage for large immutable payloads.',
-    cdn: 'Globally distributed edge cache for static or cacheable responses.',
-    worker: 'Background consumer for asynchronous, retryable work.',
-    external: 'Third-party or independently operated dependency.',
-  }
-  return map[type] ?? ''
+function DesignNodeView({data,selected}:{data:DesignData;selected:boolean}) {
+  if(data.kind==='text') return <div className="text-node" style={{color:data.color}}>{data.label}</div>
+  if(data.kind==='group') return <div className="group-node" style={{borderColor:data.color}}><div>{data.label}</div><Handle type="target" position={Position.Left}/><Handle type="source" position={Position.Right}/></div>
+  if(data.kind==='note') return <div className="sticky-node"><Handle type="target" position={Position.Left}/><strong>{data.label}</strong><p>{data.description || 'Double click to add a note'}</p><Handle type="source" position={Position.Right}/></div>
+  return <div className={'design-node-card '+(selected?'selected':'')} style={{'--accent':data.color} as React.CSSProperties}>
+    <Handle type="target" position={Position.Left}/><div className="node-stripe"/><div className="node-title">{data.label}</div>{data.description&&<div className="node-description">{data.description}</div>}<Handle type="source" position={Position.Right}/>
+  </div>
 }
+const nodeTypes={design:DesignNodeView}
 
-function defaultTechnology(type: string) {
-  const map: Record<string, string> = {
-    client: 'Web / iOS / Android', service: 'Go / Java / TypeScript', gateway: 'Envoy / NGINX', 'load-balancer': 'ALB / NGINX', database: 'PostgreSQL / MySQL', cache: 'Redis', queue: 'Kafka / SQS', storage: 'S3 / GCS', cdn: 'CloudFront / Fastly', worker: 'Go / Python', external: '3rd-party API',
-  }
-  return map[type] ?? ''
-}
+export default function App(){
+  const [files,setFiles]=useState<ProjectFile[]>(()=>{try{return JSON.parse(localStorage.getItem('sd-files')||'')||[seed]}catch{return [seed]}})
+  const [activeId,setActiveId]=useState(()=>files[0]?.id||seed.id)
+  const active=files.find(f=>f.id===activeId)||files[0]
+  const [nodes,setNodes,onNodesChange]=useNodesState<DesignNode>(active.nodes)
+  const [edges,setEdges,onEdgesChange]=useEdgesState(active.edges)
+  const [selectedId,setSelectedId]=useState<string|null>(null)
+  const [query,setQuery]=useState('')
+  const [leftTab,setLeftTab]=useState<'components'|'files'>('components')
+  const [flow,setFlow]=useState<any>(null)
+  const dragKind=useRef<Kind|null>(null)
+  const history=useRef<{nodes:DesignNode[];edges:Edge[]}[]>([])
+  const future=useRef<{nodes:DesignNode[];edges:Edge[]}[]>([])
+  const selected=nodes.find(n=>n.id===selectedId)
 
-function blankFile(id = crypto.randomUUID()): ProjectFile {
-  return { id, name: 'Untitled Design', updatedAt: Date.now(), problem: '', notes: '', nodes: [], edges: [] }
-}
+  useEffect(()=>{localStorage.setItem('sd-files',JSON.stringify(files))},[files])
+  useEffect(()=>{setNodes(active.nodes);setEdges(active.edges);setSelectedId(null)},[activeId])
+  useEffect(()=>{const t=setTimeout(()=>setFiles(prev=>prev.map(f=>f.id===activeId?{...f,nodes,edges,updatedAt:Date.now()}:f)),250);return()=>clearTimeout(t)},[nodes,edges,activeId])
+  const snapshot=()=>{history.current.push({nodes:structuredClone(nodes),edges:structuredClone(edges)});history.current=history.current.slice(-40);future.current=[]}
+  const onConnect=useCallback((c:Connection)=>{snapshot();setEdges(es=>addEdge({...c,type:'smoothstep',markerEnd:{type:MarkerType.ArrowClosed},style:{stroke:'#8190a5',strokeWidth:1.7}},es))},[edges,nodes])
+  const undo=()=>{const prev=history.current.pop();if(!prev)return;future.current.push({nodes:structuredClone(nodes),edges:structuredClone(edges)});setNodes(prev.nodes);setEdges(prev.edges)}
+  const redo=()=>{const next=future.current.pop();if(!next)return;history.current.push({nodes:structuredClone(nodes),edges:structuredClone(edges)});setNodes(next.nodes);setEdges(next.edges)}
+  const addNode=(kind:Kind,pos={x:250,y:180})=>{snapshot();const n=makeNode(kind,pos);setNodes(ns=>[...ns,n]);setSelectedId(n.id)}
+  const onDrop=(e:React.DragEvent)=>{e.preventDefault();if(!dragKind.current||!flow)return;addNode(dragKind.current,flow.screenToFlowPosition({x:e.clientX,y:e.clientY}));dragKind.current=null}
+  const createFile=()=>{const f=blankFile('Untitled Design');setFiles(fs=>[f,...fs]);setActiveId(f.id);setLeftTab('files')}
+  const renameActive=()=>{const name=prompt('Design name',active.name);if(name?.trim())setFiles(fs=>fs.map(f=>f.id===activeId?{...f,name:name.trim(),updatedAt:Date.now()}:f))}
+  const duplicateActive=()=>{const f={...structuredClone(active),id:crypto.randomUUID(),name:active.name+' copy',updatedAt:Date.now(),nodes:active.nodes.map(n=>({...n,id:crypto.randomUUID()}))};setFiles(fs=>[f,...fs]);setActiveId(f.id)}
+  const deleteActive=()=>{const remaining=files.filter(f=>f.id!==activeId);const next=remaining[0]||blankFile();setFiles(remaining.length?remaining:[next]);setActiveId(next.id)}
+  const removeSelected=()=>{if(!selectedId)return;snapshot();setNodes(ns=>ns.filter(n=>n.id!==selectedId));setEdges(es=>es.filter(e=>e.source!==selectedId&&e.target!==selectedId));setSelectedId(null)}
+  const updateSelected=(patch:Partial<DesignData>)=>{if(!selectedId)return;setNodes(ns=>ns.map(n=>n.id===selectedId?{...n,data:{...n.data,...patch}}:n))}
+  const duplicateSelected=()=>{if(!selected)return;snapshot();const n={...structuredClone(selected),id:crypto.randomUUID(),position:{x:selected.position.x+35,y:selected.position.y+35}};setNodes(ns=>[...ns,n]);setSelectedId(n.id)}
+  const exportWorkspace=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(files,null,2)],{type:'application/json'}));a.download='system-design-workspace.json';a.click()}
+  const importWorkspace=(e:React.ChangeEvent<HTMLInputElement>)=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const v=JSON.parse(String(r.result));if(!Array.isArray(v)||!v.length)throw Error();setFiles(v);setActiveId(v[0].id)}catch{alert('Invalid workspace file')}};r.readAsText(f);e.target.value=''}
+  useEffect(()=>{const key=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key==='z'){e.preventDefault();undo()}if((e.metaKey||e.ctrlKey)&&e.key==='y'){e.preventDefault();redo()}if((e.metaKey||e.ctrlKey)&&e.key==='d'&&selected){e.preventDefault();duplicateSelected()}if((e.key==='Delete'||e.key==='Backspace')&&selected&&document.activeElement===document.body){e.preventDefault();removeSelected()}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)})
+  const visible=useMemo(()=>palette.filter(p=>p.label.toLowerCase().includes(query.toLowerCase())),[query])
 
-function cloneTemplate(key: keyof typeof starterTemplates, id = crypto.randomUUID()): ProjectFile {
-  const source = starterTemplates[key]
-  const ids = source.nodes.map((n) => n.id)
-  const clonedNodes = source.nodes.map((n, i) => ({ ...n, id: ids[i], selected: false, data: { ...n.data } }))
-  return { id, name: source.title, updatedAt: Date.now(), problem: source.problem, notes: '## Interview notes\n\n- Clarify requirements\n- Estimate traffic and storage\n- Define APIs\n- Identify bottlenecks and failure modes', nodes: clonedNodes, edges: source.edges.map((e) => ({ ...e })) }
-}
-
-const seedFile = cloneTemplate('url-shortener')
-
-export default function App() {
-  const [files, setFiles] = useState<ProjectFile[]>(() => {
-    const stored = localStorage.getItem('system-design-files')
-    return stored ? JSON.parse(stored) : [seedFile]
-  })
-  const [activeId, setActiveId] = useState(() => files[0]?.id ?? seedFile.id)
-  const [nodes, setNodes, onNodesChange] = useNodesState<DesignNode>(files.find((f) => f.id === activeId)?.nodes ?? [])
-  const [edges, setEdges, onEdgesChange] = useEdgesState(files.find((f) => f.id === activeId)?.edges ?? [])
-  const [reactFlow, setReactFlow] = useState<ReactFlowInstance | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
-  const [showTemplates, setShowTemplates] = useState(false)
-  const [showNotes, setShowNotes] = useState(true)
-  const [leftTab, setLeftTab] = useState<'components' | 'files'>('components')
-  const [fileName, setFileName] = useState('')
-  const dragType = useRef<string | null>(null)
-
-  const activeFile = files.find((f) => f.id === activeId) ?? files[0]
-  const selectedNode = nodes.find((n) => n.id === selectedId)
-
-  useEffect(() => {
-    localStorage.setItem('system-design-files', JSON.stringify(files))
-  }, [files])
-
-  useEffect(() => {
-    const file = files.find((f) => f.id === activeId)
-    if (!file) return
-    setNodes(file.nodes)
-    setEdges(file.edges)
-    setSelectedId(null)
-  }, [activeId])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setFiles((prev) => prev.map((f) => f.id === activeId ? { ...f, updatedAt: Date.now(), nodes, edges } : f))
-    }, 300)
-    return () => window.clearTimeout(timer)
-  }, [nodes, edges, activeId])
-
-  const onConnect = useCallback((params: Connection) => setEdges((eds) => addEdge({ ...params, type: 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15 }, style: { stroke: '#64748b', strokeWidth: 1.8 } }, eds)), [setEdges])
-
-  const updateActive = (patch: Partial<ProjectFile>) => setFiles((prev) => prev.map((f) => f.id === activeId ? { ...f, ...patch, updatedAt: Date.now() } : f))
-
-  const newFile = () => {
-    const fresh = blankFile()
-    setFiles((prev) => [fresh, ...prev])
-    setActiveId(fresh.id)
-    setLeftTab('files')
-  }
-
-  const addTemplate = (key: keyof typeof starterTemplates) => {
-    const fresh = cloneTemplate(key)
-    setFiles((prev) => [fresh, ...prev])
-    setActiveId(fresh.id)
-    setShowTemplates(false)
-  }
-
-  const exportWorkspace = () => {
-    const blob = new Blob([JSON.stringify(files, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'system-design-workspace.json'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const importWorkspace = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      try {
-        const imported = JSON.parse(String(reader.result)) as ProjectFile[]
-        if (!Array.isArray(imported) || !imported.length) throw new Error('Invalid workspace')
-        setFiles(imported)
-        setActiveId(imported[0].id)
-      } catch {
-        alert('Could not import this workspace JSON.')
-      }
-    }
-    reader.readAsText(file)
-    event.target.value = ''
-  }
-
-  const deleteActive = () => {
-    if (!activeFile) return
-    const remaining = files.filter((f) => f.id !== activeFile.id)
-    const next = remaining[0] ?? blankFile()
-    setFiles(remaining.length ? remaining : [next])
-    setActiveId(next.id)
-  }
-
-  const filteredPalette = useMemo(() => palette.filter((p) => p.label.toLowerCase().includes(query.toLowerCase())), [query])
-
-  const addNode = (type: string, position = { x: 260, y: 190 }) => {
-    const def = palette.find((p) => p.type === type)!
-    const newNode: DesignNode = node(type, def.label, position.x, position.y, def.color)
-    setNodes((current) => [...current, newNode])
-    setSelectedId(newNode.id)
-  }
-
-  const onDrop = (event: React.DragEvent) => {
-    event.preventDefault()
-    if (!reactFlow || !dragType.current) return
-    addNode(dragType.current, reactFlow.screenToFlowPosition({ x: event.clientX, y: event.clientY }))
-    dragType.current = null
-  }
-
-  const updateSelectedNode = (patch: Partial<DesignNodeData>) => {
-    if (!selectedId) return
-    setNodes((current) => current.map((n) => n.id === selectedId ? { ...n, data: { ...n.data, ...patch } } : n))
-  }
-
-  const deleteSelectedNode = () => {
-    if (!selectedId) return
-    setNodes((current) => current.filter((n) => n.id !== selectedId))
-    setEdges((current) => current.filter((e) => e.source !== selectedId && e.target !== selectedId))
-    setSelectedId(null)
-  }
-
-  const styleNodes = nodes.map((n) => ({
-    ...n,
-    className: `${n.className ?? ''} design-node`,
-    data: { ...n.data, label: n.data.label },
-  }))
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand"><div className="brand-mark"><Layers3 size={17} /></div><div><div className="brand-title">System Design Studio</div><div className="brand-subtitle">Interactive architecture workspace</div></div></div>
-        <div className="topbar-center"><button className="file-title-button" onClick={() => { setLeftTab('files'); setFileName(activeFile?.name ?? '') }}>{activeFile?.name}<ChevronDown size={14} /></button><span className="saved-dot">Saved locally</span></div>
-        <div className="top-actions">
-          <button className="icon-btn" title="Export workspace" onClick={exportWorkspace}><Download size={16} /></button>
-          <label className="icon-btn" title="Import workspace"><Upload size={16} /><input hidden type="file" accept="application/json" onChange={importWorkspace} /></label>
-          <button className="icon-btn" title="Settings"><Settings2 size={16} /></button>
-          <button className="share-btn"><Share2 size={15} /> Share</button>
-          <button className="avatar">KG</button>
-        </div>
-      </header>
-
-      <div className="workspace">
-        <aside className="sidebar left">
-          <div className="sidebar-tabs"><button className={leftTab === 'components' ? 'active' : ''} onClick={() => setLeftTab('components')}>Components</button><button className={leftTab === 'files' ? 'active' : ''} onClick={() => setLeftTab('files')}>Files</button></div>
-          {leftTab === 'components' ? <>
-            <div className="search-wrap"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search components" /></div>
-            <div className="component-section"><div className="section-label">ARCHITECTURE</div>{filteredPalette.map((item) => <div key={item.type} draggable onDragStart={() => dragType.current = item.type} onClick={() => addNode(item.type)} className="palette-item"><div className="palette-icon" style={{ background: `${item.color}16`, color: item.color }}><item.icon size={15} /></div><span>{item.label}</span><GripVertical size={13} className="drag-handle" /></div>)}</div>
-            <div className="hint-card"><Sparkles size={15} /><div><strong>Tip</strong><p>Drag components onto the canvas, then connect handles to model request flow.</p></div></div>
-          </> : <>
-            <div className="files-toolbar"><button className="new-file-btn" onClick={newFile}><Plus size={15} /> New file</button><button className="icon-btn small" onClick={() => setShowTemplates(true)} title="Templates"><FilePlus2 size={15} /></button></div>
-            <div className="file-list">{files.map((f) => <button key={f.id} className={`file-item ${f.id === activeId ? 'active' : ''}`} onClick={() => setActiveId(f.id)}><FileCode2 size={15} /><div><strong>{f.name}</strong><span>{new Date(f.updatedAt).toLocaleDateString()}</span></div><MoreHorizontal size={15} /></button>)}</div>
-            <div className="file-actions"><button onClick={exportWorkspace}><Download size={15} /> Export workspace</button><label><Upload size={15} /> Import workspace<input hidden type="file" accept="application/json" onChange={importWorkspace} /></label></div>
-          </>}
-          <div className="sidebar-footer"><Github size={14} /><span>System Design</span><span className="version">v0.1</span></div>
-        </aside>
-
-        <main className="canvas-area">
-          <div className="canvas-header"><div><span className="breadcrumb">Workspace / {activeFile?.name}</span><h1>{activeFile?.name}</h1></div><div className="canvas-header-actions"><button onClick={() => setShowTemplates(true)}><Sparkles size={14} /> Templates</button><button onClick={() => setShowNotes((v) => !v)}><StickyNote size={14} /> Notes</button><button onClick={deleteActive} className="danger-ghost"><Trash2 size={14} /> Delete file</button></div></div>
-          <div className="canvas-shell" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
-            <ReactFlow
-              nodes={styleNodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onInit={setReactFlow}
-              onNodeClick={(_, n) => setSelectedId(n.id)}
-              onPaneClick={() => setSelectedId(null)}
-              fitView
-              fitViewOptions={{ padding: 0.25 }}
-              defaultEdgeOptions={{ type: 'smoothstep' }}
-              colorMode="dark"
-            >
-              <MiniMap className="minimap" pannable zoomable nodeColor={(n) => n.data?.color || '#64748b'} />
-              <Controls className="flow-controls" />
-              <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#233046" />
-            </ReactFlow>
-            <div className="canvas-toolbar"><div className="toolbar-pill"><Code2 size={14} /> Interview mode</div><div className="toolbar-pill"><Save size={14} /> Auto-save</div><div className="toolbar-pill"><Box size={14} /> {nodes.length} components</div></div>
-          </div>
-          {showNotes && <section className="notes-drawer"><div className="notes-head"><div><div className="section-label">PROBLEM & NOTES</div><strong>Interview workspace</strong></div><button onClick={() => setShowNotes(false)} className="icon-btn small"><X size={14} /></button></div><div className="notes-grid"><div><label>Prompt</label><textarea value={activeFile?.problem ?? ''} onChange={(e) => updateActive({ problem: e.target.value })} placeholder="Paste the interview problem statement…" /></div><div><label>Notes</label><textarea className="mono" value={activeFile?.notes ?? ''} onChange={(e) => updateActive({ notes: e.target.value })} placeholder="Write requirements, APIs, estimates, trade-offs, failure modes…" /></div></div></section>}
-        </main>
-
-        <aside className="sidebar right">
-          <div className="inspector-head"><div><div className="section-label">INSPECTOR</div><h2>{selectedNode ? selectedNode.data.label : 'Canvas'}</h2></div>{selectedNode && <button className="icon-btn small" onClick={deleteSelectedNode}><Trash2 size={14} /></button>}</div>
-          {selectedNode ? <div className="inspector-body">
-            <div className="property"><label>Component name</label><input value={selectedNode.data.label} onChange={(e) => updateSelectedNode({ label: e.target.value })} /></div>
-            <div className="property"><label>Type</label><div className="readonly"><Layers3 size={13} /> {selectedNode.data.type}</div></div>
-            <div className="property"><label>Technology</label><input value={selectedNode.data.technology ?? ''} onChange={(e) => updateSelectedNode({ technology: e.target.value })} /></div>
-            <div className="property"><label>Description</label><textarea value={selectedNode.data.description ?? ''} onChange={(e) => updateSelectedNode({ description: e.target.value })} /></div>
-            <div className="inspector-section"><div className="section-row"><span>Position</span><span className="muted">{Math.round(selectedNode.position.x)} × {Math.round(selectedNode.position.y)}</span></div><div className="section-row"><span>Connections</span><span className="muted">{edges.filter((e) => e.source === selectedNode.id || e.target === selectedNode.id).length}</span></div></div>
-            <button className="delete-component" onClick={deleteSelectedNode}><Trash2 size={14} /> Remove component</button>
-          </div> : <div className="empty-inspector"><div className="empty-icon"><Network size={20} /></div><strong>Select a component</strong><p>Click an architecture node to edit its name, technology, description, and inspect connections.</p></div>}
-          <div className="right-bottom"><div className="section-label">DESIGN CHECKLIST</div><Checklist label="Requirements captured" done={Boolean(activeFile?.problem)} /><Checklist label="Core request flow" done={nodes.length > 0 && edges.length > 0} /><Checklist label="Data storage" done={nodes.some((n) => n.data.type === 'database')} /><Checklist label="Async boundaries" done={nodes.some((n) => n.data.type === 'queue')} /><Checklist label="Caching strategy" done={nodes.some((n) => n.data.type === 'cache')} /></div>
-        </aside>
-      </div>
-
-      {showTemplates && <div className="modal-backdrop" onMouseDown={() => setShowTemplates(false)}><div className="template-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><div className="section-label">STARTER TEMPLATES</div><h2>Jump into a system</h2></div><button className="icon-btn" onClick={() => setShowTemplates(false)}><X size={16} /></button></div><div className="template-grid">{Object.entries(starterTemplates).map(([key, tpl]) => <button key={key} className="template-card" onClick={() => addTemplate(key as keyof typeof starterTemplates)}><div className="template-visual"><Layers3 size={22} /><span>{tpl.title}</span></div><h3>{tpl.title}</h3><p>{tpl.problem}</p><span className="template-link">Use template <ChevronRight size={14} /></span></button>)}</div></div></div>}
-
-      {leftTab === 'files' && fileName !== '' && <div className="rename-popover"><label>File name<input autoFocus value={fileName} onChange={(e) => setFileName(e.target.value)} onBlur={() => { updateActive({ name: fileName.trim() || activeFile.name }); setFileName('') }} onKeyDown={(e) => { if (e.key === 'Enter') { updateActive({ name: fileName.trim() || activeFile.name }); setFileName('') } }} /></label></div>}
+  return <div className="app-shell">
+    <header className="topbar"><div className="brand"><div className="brand-mark"><Layers3 size={17}/></div><div><b>System Design Studio</b><span>blank architecture workspace</span></div></div>
+      <button className="design-name" onClick={renameActive}>{active.name}<ChevronDown size={14}/></button>
+      <div className="top-actions"><button className="icon-btn" onClick={undo} title="Undo"><Undo2 size={16}/></button><button className="icon-btn" onClick={redo} title="Redo"><Redo2 size={16}/></button><button className="icon-btn" onClick={exportWorkspace}><Download size={16}/></button><label className="icon-btn"><Upload size={16}/><input hidden type="file" accept="application/json" onChange={importWorkspace}/></label><span className="saved"><Save size={13}/> Saved</span></div>
+    </header>
+    <div className="workspace">
+      <aside className="sidebar left"><div className="sidebar-tabs"><button className={leftTab==='components'?'active':''} onClick={()=>setLeftTab('components')}>Components</button><button className={leftTab==='files'?'active':''} onClick={()=>setLeftTab('files')}>Files <span>{files.length}</span></button></div>
+      {leftTab==='components'?<><div className="search-wrap"><Search size={14}/><input placeholder="Search components" value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="palette"><div className="palette-label">SYSTEM COMPONENTS</div>{visible.map(p=><button key={p.kind} draggable onDragStart={()=>dragKind.current=p.kind} onClick={()=>addNode(p.kind)} className="palette-item"><i style={{color:p.color,background:p.color+'18'}}><p.icon size={15}/></i>{p.label}<GripVertical size={13}/></button>)}</div></>:<><div className="files-toolbar"><button className="new-file" onClick={createFile}><Plus size={15}/> New design</button></div><div className="file-list">{files.map(f=><div className={'file-row '+(f.id===activeId?'active':'')} key={f.id}><button onClick={()=>setActiveId(f.id)}><FilePlus2 size={14}/><span><b>{f.name}</b><small>{new Date(f.updatedAt).toLocaleDateString()}</small></span></button><button className="more" onClick={()=>setActiveId(f.id)}><MoreHorizontal size={15}/></button></div>)}</div></>}
+      <div className="sidebar-tip"><MousePointer2 size={14}/><span>Drag, connect, zoom and build.</span></div></aside>
+      <main className="canvas-area"><div className="canvas-header"><div><span>MY DESIGNS</span><h1>{active.name}</h1></div><div className="canvas-actions"><button onClick={createFile}><Plus size={14}/> New</button><button onClick={renameActive}><Pencil size={14}/> Rename</button><button onClick={duplicateActive}><Copy size={14}/> Duplicate</button><button className="danger" onClick={deleteActive}><Trash2 size={14}/></button></div></div>
+        <div className="canvas-shell" onDrop={onDrop} onDragOver={e=>e.preventDefault()}><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onInit={setFlow} onNodeClick={(_,n)=>setSelectedId(n.id)} onPaneClick={()=>setSelectedId(null)} colorMode="dark" fitView fitViewOptions={{padding:.3}}><Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#26344b"/><MiniMap pannable zoomable/><Controls/></ReactFlow><div className="canvas-status"><span><CircleDot size={12}/> {nodes.length} nodes</span><span><Link2 size={12}/> {edges.length} connections</span></div></div>
+      </main>
+      <aside className="sidebar right"><div className="inspector-head"><div><span>PROPERTIES</span><h2>{selected?selected.data.label:'Nothing selected'}</h2></div>{selected&&<button className="icon-btn small" onClick={removeSelected}><Trash2 size={14}/></button>}</div>
+      {selected?<div className="inspector"><label>Name<input value={selected.data.label} onChange={e=>updateSelected({label:e.target.value})}/></label><label>Type<div className="readonly">{selected.data.kind}</div></label><label>Description<textarea value={selected.data.description||''} onChange={e=>updateSelected({description:e.target.value})} placeholder="Optional note about this component"/></label><div className="color-row"><span>Color</span><input type="color" value={selected.data.color} onChange={e=>updateSelected({color:e.target.value})}/></div><button className="duplicate" onClick={duplicateSelected}><Copy size={14}/> Duplicate component</button><button className="delete" onClick={removeSelected}><Trash2 size={14}/> Delete component</button></div>:<div className="empty"><div><Network size={22}/></div><b>Select something</b><p>Click a component to edit it. Double click node text directly if you want a quick rename.</p></div>}
+      <div className="shortcuts"><span>SHORTCUTS</span><p><kbd>⌘/Ctrl Z</kbd> Undo</p><p><kbd>⌘/Ctrl Y</kbd> Redo</p><p><kbd>⌘/Ctrl D</kbd> Duplicate</p><p><kbd>Del</kbd> Remove</p></div></aside>
     </div>
-  )
-}
-
-function Checklist({ label, done }: { label: string; done: boolean }) {
-  return <div className="check-item"><span className={done ? 'check done' : 'check'}>{done ? '✓' : ''}</span><span>{label}</span></div>
+  </div>
 }
